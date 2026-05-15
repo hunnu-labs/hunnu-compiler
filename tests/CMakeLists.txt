@@ -1,3 +1,7 @@
+# Support being built both standalone (as compiler-core root) and
+# as a subdirectory of hunnu-lang via add_subdirectory(compiler-core/tests)
+get_filename_component(HUNNU_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/.. ABSOLUTE)
+
 # Test executable
 add_executable(hunnu_tests
     main.c
@@ -6,20 +10,20 @@ add_executable(hunnu_tests
     test_value.c
     test_scope.c
     test_interpreter.c
-    ${CMAKE_SOURCE_DIR}/compiler/lexer/lexer.c
-    ${CMAKE_SOURCE_DIR}/compiler/lexer/token.c
-    ${CMAKE_SOURCE_DIR}/compiler/parser/parser.c
-    ${CMAKE_SOURCE_DIR}/compiler/ast/ast.c
-    ${CMAKE_SOURCE_DIR}/compiler/ast/ast_free.c
-    ${CMAKE_SOURCE_DIR}/compiler/ast/ast_print.c
-    ${CMAKE_SOURCE_DIR}/compiler/interpreter/interpreter.c
-    ${CMAKE_SOURCE_DIR}/compiler/interpreter/builtins.c
-    ${CMAKE_SOURCE_DIR}/compiler/value.c
-    ${CMAKE_SOURCE_DIR}/compiler/scope.c
-    ${CMAKE_SOURCE_DIR}/compiler/i18n/i18n.c
+    ${HUNNU_ROOT}/compiler/lexer/lexer.c
+    ${HUNNU_ROOT}/compiler/lexer/token.c
+    ${HUNNU_ROOT}/compiler/parser/parser.c
+    ${HUNNU_ROOT}/compiler/ast/ast.c
+    ${HUNNU_ROOT}/compiler/ast/ast_free.c
+    ${HUNNU_ROOT}/compiler/ast/ast_print.c
+    ${HUNNU_ROOT}/compiler/interpreter/interpreter.c
+    ${HUNNU_ROOT}/compiler/interpreter/builtins.c
+    ${HUNNU_ROOT}/compiler/value.c
+    ${HUNNU_ROOT}/compiler/scope.c
+    ${HUNNU_ROOT}/compiler/i18n/i18n.c
 )
 
-target_include_directories(hunnu_tests PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(hunnu_tests PRIVATE ${HUNNU_ROOT})
 target_compile_options(hunnu_tests PRIVATE -Wall -Wextra -Wpedantic)
 target_link_libraries(hunnu_tests dl)
 
