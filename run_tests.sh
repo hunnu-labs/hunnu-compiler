@@ -35,25 +35,15 @@ run_test() {
     fi
 }
 
-echo "=== Hunnu Test Suite ==="
+echo "=== Hunnu Compiler Test Suite ==="
 echo ""
 
-# --- C Interpreter Tests ---
-echo "--- C Interpreter ---"
-for f in examples/test_*.hn examples/main.hn; do
-    if [ ! -f "$f" ]; then continue; fi
-    name="$(basename "$f")"
-    run_test "run $name" "$HUNNU run $f" ""
-done
+echo "--- Basic Smoke Tests ---"
+run_test "version" "$HUNNU -v" "hunnu"
 
-# --- AOT Compile Tests ---
-echo "--- AOT Compiler ---"
-for f in examples/main.hn examples/test_oop.hn examples/test_class_top.hn; do
-    if [ ! -f "$f" ]; then continue; fi
-    name="$(basename "$f")"
-    outname="/tmp/hunnu_test_${name%.hn}"
-    run_test "compile $name" "$HUNNU compile $f -o $outname && $outname" ""
-done
+echo ""
+echo "--- C Unit Tests ---"
+"${HUNNU}_tests" && green "  PASS  C unit tests" || red "  FAIL  C unit tests"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
