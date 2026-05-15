@@ -49,6 +49,8 @@ typedef struct Interpreter {
     int tco_pending;
     Value* tco_args;
     size_t tco_arg_count;
+    /* Implicit return: last expression value in a function body */
+    Value last_expr_value;
 } Interpreter;
 
 /* Lifecycle */

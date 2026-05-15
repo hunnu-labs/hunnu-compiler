@@ -1126,14 +1126,27 @@ ASTNode* parser_parse_for_statement(Parser* parser) {
 }
 
 ASTNode* parser_parse_return_statement(Parser* parser) {
+    int32_t line = parser->previous->line;
+    int32_t column = parser->previous->column;
     ASTNode* value = NULL;
     if (!parser_check(parser, TOKEN_RBRACE) && !parser_check(parser, TOKEN_EOF)) {
         value = parser_parse_expression(parser);
     }
     
-    return ast_return_stmt_create(value,
-                                  parser->previous->line,
-                                  parser->previous->column);
+    ASTNode* ret = ast_return_stmt_create(value, line, column);
+    
+    /* Trailing if / unless */
+    if (parser_check(parser, TOKEN_IF)) {
+        parser_advance(parser);
+        ASTNode* condition = parser_parse_expression(parser);
+        ret = ast_if_stmt_create(condition, ret, NULL, line, column);
+    } else if (parser_match(parser, TOKEN_UNLESS)) {
+        ASTNode* condition = parser_parse_expression(parser);
+        ASTNode* not_cond = ast_unary_expr_create(TOKEN_NOT, condition, line, column);
+        ret = ast_if_stmt_create(not_cond, ret, NULL, line, column);
+    }
+    
+    return ret;
 }
 
 ASTNode* parser_parse_break_statement(Parser* parser) {
@@ -1150,14 +1163,27 @@ ASTNode* parser_parse_continue_statement(Parser* parser) {
 
 ASTNode* parser_parse_expression_statement(Parser* parser) {
     ASTNode* expr = parser_parse_expression(parser);
+    int32_t line = parser->previous->line;
+    int32_t column = parser->previous->column;
     
     if (parser_check(parser, TOKEN_SEMICOLON)) {
         parser_advance(parser);
     }
     
-    return ast_expr_stmt_create(expr,
-                               parser->previous->line,
-                               parser->previous->column);
+    ASTNode* stmt = ast_expr_stmt_create(expr, line, column);
+    
+    /* Trailing if / unless */
+    if (parser_check(parser, TOKEN_IF)) {
+        parser_advance(parser);
+        ASTNode* condition = parser_parse_expression(parser);
+        stmt = ast_if_stmt_create(condition, stmt, NULL, line, column);
+    } else if (parser_match(parser, TOKEN_UNLESS)) {
+        ASTNode* condition = parser_parse_expression(parser);
+        ASTNode* not_cond = ast_unary_expr_create(TOKEN_NOT, condition, line, column);
+        stmt = ast_if_stmt_create(not_cond, stmt, NULL, line, column);
+    }
+    
+    return stmt;
 }
 
 /* Forward declarations for parsing functions */

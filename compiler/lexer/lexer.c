@@ -41,6 +41,7 @@ static const char* keyword_names[] = {
     "try",        "турших",   // try
     "catch",      "барих",    // catch
     "finally",    "эцэст",    // finally
+    "unless",     "биш бол",  // unless
     "type",       "төрөл",    // type (struct)
     "class",      "класс",    // class declaration
     "new",        "шинэ",     // constructor/instantiation
@@ -54,6 +55,8 @@ static const char* keyword_names[] = {
     "and",        "мөн",      // logical and
     "or",         "эсвэл",    // logical or
     "not",        "үгүй",     // logical not
+    "def",        "тодорхойл", // define function
+    "end",        "төгсгөл",   // end block
     NULL
 };
 
@@ -77,6 +80,7 @@ static TokenType keyword_types[] = {
     TOKEN_TRY,    TOKEN_TRY,
     TOKEN_CATCH,  TOKEN_CATCH,
     TOKEN_FINALLY, TOKEN_FINALLY,
+    TOKEN_UNLESS, TOKEN_UNLESS,
     TOKEN_TYPE,   TOKEN_TYPE,
     TOKEN_CLASS,  TOKEN_CLASS,
     TOKEN_NEW,    TOKEN_NEW,
@@ -90,6 +94,8 @@ static TokenType keyword_types[] = {
     TOKEN_AND,    TOKEN_AND,
     TOKEN_OR,     TOKEN_OR,
     TOKEN_NOT,    TOKEN_NOT,
+    TOKEN_DEF,    TOKEN_DEF,
+    TOKEN_END,    TOKEN_END,
     TOKEN_UNKNOWN
 };
 

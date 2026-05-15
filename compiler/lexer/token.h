@@ -32,6 +32,7 @@ typedef enum {
     TOKEN_MATCH,
     TOKEN_NULL,
     TOKEN_NIL_KEYWORD,
+    TOKEN_UNLESS,
     TOKEN_IMPORT,
     TOKEN_EXTERN,
     TOKEN_TRY,

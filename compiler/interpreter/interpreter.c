@@ -30,6 +30,7 @@ Interpreter* interpreter_new(void) {
     interp->tco_pending = 0;
     interp->tco_args = NULL;
     interp->tco_arg_count = 0;
+    interp->last_expr_value = value_create_none();
     memset(interp->extern_fns, 0, sizeof(interp->extern_fns));
     memset(interp->user_fns, 0, sizeof(interp->user_fns));
     return interp;
@@ -154,6 +155,9 @@ static Value interpreter_call_fn_node(Interpreter* interp, ASTNode* fn_node, Sco
         interp->current_fn_name = fn_node->data.fn_decl.name;
     }
 
+    Value saved_last_expr = interp->last_expr_value;
+    interp->last_expr_value = value_create_none();
+
     Value result = value_create_none();
 
     while (1) {
@@ -172,6 +176,8 @@ static Value interpreter_call_fn_node(Interpreter* interp, ASTNode* fn_node, Sco
 
         if (interp->tco_pending) {
             interp->tco_pending = 0;
+            value_free(&interp->last_expr_value);
+            interp->last_expr_value = value_create_none();
             Scope* new_scope = scope_create(16, captured_scope ? captured_scope : old_scope);
             interp->current_scope = new_scope;
             scope_free(fn_scope);
@@ -191,9 +197,15 @@ static Value interpreter_call_fn_node(Interpreter* interp, ASTNode* fn_node, Sco
         if (interp->has_return) {
             result = interp->return_value;
             interp->has_return = 0;
+        } else {
+            result = interp->last_expr_value;
+            interp->last_expr_value = value_create_none();
         }
         break;
     }
+
+    value_free(&interp->last_expr_value);
+    interp->last_expr_value = saved_last_expr;
 
     interp->current_fn_name = saved_fn_name;
     interp->current_scope = old_scope;
@@ -222,6 +234,9 @@ static Value interpreter_call_lambda(Interpreter* interp, ASTNode* lambda, Scope
         scope_define(fn_scope, lambda->data.lambda.params[i], args[i], 1);
     }
 
+    Value saved_last_expr = interp->last_expr_value;
+    interp->last_expr_value = value_create_none();
+
     interp->has_return = 0;
     Value result = value_create_none();
     ASTNode* body = lambda->data.lambda.body;
@@ -233,6 +248,9 @@ static Value interpreter_call_lambda(Interpreter* interp, ASTNode* lambda, Scope
         if (interp->has_return) {
             result = interp->return_value;
             interp->has_return = 0;
+        } else {
+            result = interp->last_expr_value;
+            interp->last_expr_value = value_create_none();
         }
     } else {
         result = interpreter_evaluate(interp, body);
@@ -241,6 +259,9 @@ static Value interpreter_call_lambda(Interpreter* interp, ASTNode* lambda, Scope
             interp->has_return = 0;
         }
     }
+
+    value_free(&interp->last_expr_value);
+    interp->last_expr_value = saved_last_expr;
 
     interp->current_scope = old_scope;
     scope_free(fn_scope);
@@ -279,6 +300,10 @@ Value interpreter_call_user_fn(Interpreter* interp, UserFn* ufn, Value* args, si
     char* saved_fn_name = interp->current_fn_name;
     interp->current_fn_name = ufn->name;
 
+    /* Save and reset last expression for implicit return */
+    Value saved_last_expr = interp->last_expr_value;
+    interp->last_expr_value = value_create_none();
+
     Value result = value_create_none();
 
     /* TCO loop */
@@ -298,6 +323,8 @@ Value interpreter_call_user_fn(Interpreter* interp, UserFn* ufn, Value* args, si
 
         if (interp->tco_pending) {
             interp->tco_pending = 0;
+            value_free(&interp->last_expr_value);
+            interp->last_expr_value = value_create_none();
             Scope* new_scope = scope_create(16, old_scope);
             interp->current_scope = new_scope;
             scope_free(fn_scope);
@@ -317,9 +344,16 @@ Value interpreter_call_user_fn(Interpreter* interp, UserFn* ufn, Value* args, si
         if (interp->has_return) {
             result = interp->return_value;
             interp->has_return = 0;
+        } else {
+            /* Implicit return: use last expression value */
+            result = interp->last_expr_value;
+            interp->last_expr_value = value_create_none();
         }
         break;
     }
+
+    value_free(&interp->last_expr_value);
+    interp->last_expr_value = saved_last_expr;
 
     interp->current_fn_name = saved_fn_name;
     interp->current_scope = old_scope;
@@ -644,10 +678,75 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
             /* Instance method call: obj.method() */
             Value obj = interpreter_evaluate(interp, node->data.method_call.object);
             if (obj.type != VALUE_STRUCT) {
+                /* Primitive method dispatch */
+                Value result = value_create_none();
+                size_t arg_count = node->data.method_call.arg_count;
+                Value* args = (Value*)malloc(sizeof(Value) * arg_count);
+                for (size_t i = 0; i < arg_count; i++) {
+                    args[i] = interpreter_evaluate(interp, node->data.method_call.args[i]);
+                }
+
+                if (obj.type == VALUE_STRING) {
+                    const char* s = obj.value.string_value;
+                    if (strcmp(method, "len") == 0 || strcmp(method, "length") == 0) {
+                        result = value_create_int((int64_t)strlen(s));
+                    } else if (strcmp(method, "upper") == 0) {
+                        result = builtin_str_to_upper(s);
+                    } else if (strcmp(method, "lower") == 0) {
+                        result = builtin_str_to_lower(s);
+                    } else if (strcmp(method, "trim") == 0) {
+                        result = builtin_str_trim(s);
+                    } else if (strcmp(method, "contains") == 0 && arg_count == 1 && args[0].type == VALUE_STRING) {
+                        int found = builtin_str_contains(s, args[0].value.string_value);
+                        result = value_create_bool(found);
+                    } else if (strcmp(method, "split") == 0 && arg_count == 1 && args[0].type == VALUE_STRING) {
+                        result = builtin_str_split(s, args[0].value.string_value);
+                    } else {
+                        fprintf(stderr, "Error at line %d: ", interp->current_line);
+                        fprintf(stderr, "Unknown string method '%s'\n", method);
+                    }
+                } else if (obj.type == VALUE_ARRAY) {
+                    if (strcmp(method, "len") == 0 || strcmp(method, "length") == 0) {
+                        result = value_create_int((int64_t)obj.array_length);
+                    } else if (strcmp(method, "push") == 0 && arg_count == 1) {
+                        result = builtin_arr_push(obj, args[0]);
+                    } else if (strcmp(method, "pop") == 0 && arg_count == 0) {
+                        result = builtin_arr_pop(obj);
+                    } else {
+                        fprintf(stderr, "Error at line %d: ", interp->current_line);
+                        fprintf(stderr, "Unknown array method '%s'\n", method);
+                    }
+                } else if (obj.type == VALUE_INT) {
+                    if (strcmp(method, "to_str") == 0) {
+                        char buffer[64];
+                        snprintf(buffer, sizeof(buffer), "%ld", (long)obj.value.int_value);
+                        result = value_create_string(buffer);
+                    } else if (strcmp(method, "to_float") == 0) {
+                        result = value_create_float((double)obj.value.int_value);
+                    } else {
+                        fprintf(stderr, "Error at line %d: ", interp->current_line);
+                        fprintf(stderr, "Unknown int method '%s'\n", method);
+                    }
+                } else if (obj.type == VALUE_FLOAT) {
+                    if (strcmp(method, "to_str") == 0) {
+                        char buffer[64];
+                        snprintf(buffer, sizeof(buffer), "%g", obj.value.float_value);
+                        result = value_create_string(buffer);
+                    } else if (strcmp(method, "to_int") == 0) {
+                        result = value_create_int((int64_t)obj.value.float_value);
+                    } else {
+                        fprintf(stderr, "Error at line %d: ", interp->current_line);
+                        fprintf(stderr, "Unknown float method '%s'\n", method);
+                    }
+                } else {
+                    fprintf(stderr, "Error at line %d: ", interp->current_line);
+                    fprintf(stderr, "Method call on non-struct value\n");
+                }
+
+                for (size_t i = 0; i < arg_count; i++) value_free(&args[i]);
+                free(args);
                 value_free(&obj);
-                fprintf(stderr, "Error at line %d: ", interp->current_line);
-                fprintf(stderr, "Method call on non-struct value\n");
-                return value_create_none();
+                return result;
             }
 
             /* Walk up inheritance chain to find method */
@@ -1898,7 +1997,8 @@ void interpreter_execute_statement(Interpreter* interp, ASTNode* node) {
         
         case AST_EXPR_STMT: {
             Value result = interpreter_evaluate(interp, node->data.expr_stmt.expression);
-            value_free(&result);
+            value_free(&interp->last_expr_value);
+            interp->last_expr_value = result;
             break;
         }
         
