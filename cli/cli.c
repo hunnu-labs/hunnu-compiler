@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <errno.h>
 
@@ -126,10 +127,20 @@ int cmd_install(const char* package_name) {
         printf("Installing '%s' from GitHub...\n", package_name);
         fflush(stdout);
 
-        char cmd[2048];
-        snprintf(cmd, sizeof(cmd), "git clone %s %s 2>/dev/null", repo_url, module_path);
-
-        int status = system(cmd);
+        pid_t pid = fork();
+        if (pid == 0) {
+            execlp("git", "git", "clone", repo_url, module_path, (char*)NULL);
+            _exit(127);
+        }
+        int status = 0;
+        if (pid > 0) {
+            int wstatus;
+            waitpid(pid, &wstatus, 0);
+            status = WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : -1;
+        } else {
+            fprintf(stderr, "Error: fork failed\n");
+            return 1;
+        }
         if (status != 0) {
             // Clean up empty directory if clone failed
             rmdir(module_path);
