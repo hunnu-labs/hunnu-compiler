@@ -131,7 +131,9 @@ int cmd_run(const char* filename, int debug, int use_vm, int use_vm_rust) {
                 case VALUE_NONE:
                     break;
                 case VALUE_ARRAY:
-                    constants_size += 8;  // length only for now
+                    constants_size += 8;
+                    break;
+                default:
                     break;
             }
         }
@@ -195,6 +197,8 @@ int cmd_run(const char* filename, int debug, int use_vm, int use_vm_rust) {
                     uint64_t arr_len = (uint64_t)v->array_length;
                     memcpy(&constants_buf[pos], &arr_len, 8);
                     pos += 8;
+                    break;
+                default:
                     break;
             }
         }
@@ -336,12 +340,9 @@ int main(int argc, char* argv[]) {
             print_usage(argv[0]);
             return 1;
         }
-        int use_rust = 0;
         const char* tfilename = NULL;
         for (int i = 2; i < argc; i++) {
-            if (strcmp(argv[i], "--rust") == 0) {
-                use_rust = 1;
-            } else if (argv[i][0] != '-') {
+            if (argv[i][0] != '-') {
                 tfilename = argv[i];
             }
         }
@@ -351,21 +352,6 @@ int main(int argc, char* argv[]) {
             print_usage(argv[0]);
             return 1;
         }
-#if defined(HUNNU_HAVE_RUST_COMPILER)
-        if (use_rust) {
-            int src_size = 0;
-            char* src = read_source_with_imports(tfilename, &src_size);
-            if (!src) return 1;
-            char* result = hunnu_rust_lex(src);
-            if (result) {
-                printf("Tokens (Rust frontend):\n");
-                printf("----------------------\n%s", result);
-                hunnu_rust_free_string(result);
-            }
-            free(src);
-            return 0;
-        }
-#endif
         return cmd_tokens(tfilename);
     }
 
@@ -376,12 +362,9 @@ int main(int argc, char* argv[]) {
             print_usage(argv[0]);
             return 1;
         }
-        int use_rust = 0;
         const char* afilename = NULL;
         for (int i = 2; i < argc; i++) {
-            if (strcmp(argv[i], "--rust") == 0) {
-                use_rust = 1;
-            } else if (argv[i][0] != '-') {
+            if (argv[i][0] != '-') {
                 afilename = argv[i];
             }
         }
@@ -391,21 +374,6 @@ int main(int argc, char* argv[]) {
             print_usage(argv[0]);
             return 1;
         }
-#if defined(HUNNU_HAVE_RUST_COMPILER)
-        if (use_rust) {
-            int src_size = 0;
-            char* src = read_source_with_imports(afilename, &src_size);
-            if (!src) return 1;
-            char* result = hunnu_rust_parse(src);
-            if (result) {
-                printf("AST (Rust frontend):\n");
-                printf("-------------------\n%s", result);
-                hunnu_rust_free_string(result);
-            }
-            free(src);
-            return 0;
-        }
-#endif
         return cmd_ast(afilename);
     }
 
