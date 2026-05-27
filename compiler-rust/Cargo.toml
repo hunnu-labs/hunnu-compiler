@@ -2,7 +2,7 @@
 name = "hunnu-compiler"
 version = "0.1.0"
 edition = "2021"
-description = "Hunnu Language Rust Compiler - Month 3 AOT Compiler Foundation"
+description = "Hunnu Language Rust Compiler - AOT Compiler"
 
 [lib]
 name = "hunnu_compiler"

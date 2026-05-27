@@ -1097,7 +1097,7 @@ mod tests {
         if let NodeData::Program { statements } = &ast.data {
             if let NodeData::VarDecl { initializer, .. } = &statements[0].data {
                 assert_eq!(initializer.node_type, ASTNodeType::BinaryExpr);
-                if let NodeData::BinaryExpr { operator, left, right } = &initializer.data {
+                if let NodeData::BinaryExpr { operator, left: _, right } = &initializer.data {
                     assert_eq!(*operator, TokenType::Plus);
                     assert_eq!(right.node_type, ASTNodeType::BinaryExpr);
                     if let NodeData::BinaryExpr { operator, .. } = &right.data {
