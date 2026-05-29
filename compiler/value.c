@@ -11,6 +11,19 @@
 #include <stdio.h>
 
 Value value_copy(const Value* val) {
+    /* Scalars own no heap — a bitwise copy is correct and skips the
+     * ~150-byte memset that dominates copies in hot interpreter paths. */
+    switch (val->type) {
+        case VALUE_INT:
+        case VALUE_FLOAT:
+        case VALUE_BOOL:
+        case VALUE_NONE:
+        case VALUE_POINTER:
+            return *val;
+        default:
+            break;
+    }
+
     Value copy;
     memset(&copy, 0, sizeof(copy));
     copy.type = val->type;

@@ -19,6 +19,7 @@ typedef struct {
 
 typedef struct {
     char* name;
+    unsigned long name_hash;
     char* parent_name;
     char** fields;
     int* is_pub;
@@ -27,6 +28,7 @@ typedef struct {
 
 typedef struct {
     char* name;
+    unsigned long name_hash;
     ASTNode* node;
 } UserFn;
 

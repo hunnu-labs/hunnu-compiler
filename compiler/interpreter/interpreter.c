@@ -14,6 +14,55 @@
 #include <string.h>
 #include <dlfcn.h>
 
+/*
+ * Names handled by the inline builtin chain in AST_CALL_EXPR. Kept sorted so a
+ * single bsearch can reject the common case (a user/extern call such as a
+ * recursive function) without walking ~25 sequential strcmp branches.
+ * MUST stay sorted by strcmp order and in sync with the branches below.
+ */
+static const char* const BUILTIN_NAMES[] = {
+    "Err", "None", "Ok", "Some",
+    "__hn_arr_pop", "__hn_arr_push",
+    "__hn_fs_read_file", "__hn_fs_write_file",
+    "__hn_str_contains", "__hn_str_join", "__hn_str_split",
+    "__hn_str_to_lower", "__hn_str_to_upper", "__hn_str_trim",
+    "error", "input",
+    "is_err", "is_none", "is_ok", "is_some",
+    "len", "print", "to_float", "to_int", "to_str",
+};
+
+static int builtin_name_cmp(const void* key, const void* elem) {
+    return strcmp((const char*)key, *(const char* const*)elem);
+}
+
+static int is_builtin_name(const char* name) {
+    return bsearch(name, BUILTIN_NAMES, sizeof(BUILTIN_NAMES) / sizeof(BUILTIN_NAMES[0]),
+                   sizeof(BUILTIN_NAMES[0]), builtin_name_cmp) != NULL;
+}
+
+/* djb2 — must match the comparison helpers that gate strcmp on the hash. */
+static unsigned long hn_name_hash(const char* s) {
+    unsigned long h = 5381;
+    unsigned char c;
+    while ((c = (unsigned char)*s++)) {
+        h = ((h << 5) + h) + c;
+    }
+    return h;
+}
+
+/* Linear-scan-with-hash-prefilter over user_fns; the array is small but this
+ * is hit on every call, so skipping strcmp on hash mismatch matters. */
+static UserFn* find_user_fn(Interpreter* interp, const char* name) {
+    unsigned long h = hn_name_hash(name);
+    for (size_t i = 0; i < interp->user_fn_count; i++) {
+        if (interp->user_fns[i].name_hash == h &&
+            strcmp(interp->user_fns[i].name, name) == 0) {
+            return &interp->user_fns[i];
+        }
+    }
+    return NULL;
+}
+
 Interpreter* interpreter_new(void) {
     Interpreter* interp = (Interpreter*)malloc(sizeof(Interpreter));
     interp->current_scope = scope_create(64, NULL);
@@ -92,8 +141,9 @@ void interpreter_free(Interpreter* interp) {
 }
 
 void interpreter_register_type(Interpreter* interp, const char* name, const char* parent_name, char** fields, int* is_pub, size_t field_count) {
+    unsigned long h = hn_name_hash(name);
     for (size_t i = 0; i < interp->type_count; i++) {
-        if (strcmp(interp->types[i].name, name) == 0) {
+        if (interp->types[i].name_hash == h && strcmp(interp->types[i].name, name) == 0) {
             return;
         }
     }
@@ -104,6 +154,7 @@ void interpreter_register_type(Interpreter* interp, const char* name, const char
     }
     TypeInfo* t = &interp->types[interp->type_count++];
     t->name = strdup(name);
+    t->name_hash = h;
     t->parent_name = parent_name ? strdup(parent_name) : NULL;
     t->fields = (char**)malloc(sizeof(char*) * field_count);
     t->is_pub = (int*)malloc(sizeof(int) * field_count);
@@ -115,8 +166,9 @@ void interpreter_register_type(Interpreter* interp, const char* name, const char
 }
 
 TypeInfo* interpreter_lookup_type(Interpreter* interp, const char* name) {
+    unsigned long h = hn_name_hash(name);
     for (size_t i = 0; i < interp->type_count; i++) {
-        if (strcmp(interp->types[i].name, name) == 0) {
+        if (interp->types[i].name_hash == h && strcmp(interp->types[i].name, name) == 0) {
             return &interp->types[i];
         }
     }
@@ -537,6 +589,7 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                     char* ctor_name = (char*)malloc(strlen(node->data.class_decl.name) + 5);
                     sprintf(ctor_name, "%s.new", node->data.class_decl.name);
                     ufn->name = ctor_name;
+                    ufn->name_hash = hn_name_hash(ctor_name);
                     ufn->node = ctor;
                 }
             }
@@ -545,6 +598,7 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                 if (interp->user_fn_count < MAX_USER_FNS) {
                     UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
                     ufn->name = strdup(method->data.fn_decl.name);
+                    ufn->name_hash = hn_name_hash(ufn->name);
                     ufn->node = method;
                 }
             }
@@ -561,16 +615,11 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                         char* inherited_name = (char*)malloc(strlen(child_name) + strlen(method_part) + 1);
                         sprintf(inherited_name, "%s%s", child_name, method_part);
                         /* Check if child already has this method (skip if overridden) */
-                        int already_exists = 0;
-                        for (size_t j = 0; j < interp->user_fn_count; j++) {
-                            if (strcmp(interp->user_fns[j].name, inherited_name) == 0) {
-                                already_exists = 1;
-                                break;
-                            }
-                        }
+                        int already_exists = find_user_fn(interp, inherited_name) != NULL;
                         if (!already_exists && interp->user_fn_count < MAX_USER_FNS) {
                             UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
                             ufn->name = inherited_name;
+                            ufn->name_hash = hn_name_hash(inherited_name);
                             ufn->node = interp->user_fns[i].node;
                         } else {
                             free(inherited_name);
@@ -605,13 +654,7 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
             /* Call constructor if exists for any side effects */
             char* ctor_name = (char*)malloc(strlen(cls_name) + 5);
             sprintf(ctor_name, "%s.new", cls_name);
-            UserFn* ctor_fn = NULL;
-            for (size_t i = 0; i < interp->user_fn_count; i++) {
-                if (strcmp(interp->user_fns[i].name, ctor_name) == 0) {
-                    ctor_fn = &interp->user_fns[i];
-                    break;
-                }
-            }
+            UserFn* ctor_fn = find_user_fn(interp, ctor_name);
             free(ctor_name);
 
             if (ctor_fn) {
@@ -641,17 +684,11 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                 if (t) {
                     size_t mname_len = strlen(t->name) + 1 + strlen(method) + 1;
                     char* mname = (char*)malloc(mname_len);
-                    snprintf(mname, mname_len, "%s.%s", t->name, method);
                     /* Walk up inheritance chain for static methods */
                     TypeInfo* cur_t = t;
                     while (cur_t) {
                         snprintf(mname, mname_len, "%s.%s", cur_t->name, method);
-                        for (size_t i = 0; i < interp->user_fn_count; i++) {
-                            if (strcmp(interp->user_fns[i].name, mname) == 0) {
-                                ufn = &interp->user_fns[i];
-                                break;
-                            }
-                        }
+                        ufn = find_user_fn(interp, mname);
                         if (ufn) break;
                         /* Walk up to parent */
                         if (cur_t->parent_name) {
@@ -755,12 +792,7 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                 size_t mname_len = strlen(cur_t->name) + 1 + strlen(method) + 1;
                 char* mname = (char*)malloc(mname_len);
                 snprintf(mname, mname_len, "%s.%s", cur_t->name, method);
-                for (size_t i = 0; i < interp->user_fn_count; i++) {
-                    if (strcmp(interp->user_fns[i].name, mname) == 0) {
-                        ufn = &interp->user_fns[i];
-                        break;
-                    }
-                }
+                ufn = find_user_fn(interp, mname);
                 free(mname);
                 if (ufn) break;
                 /* Walk up to parent */
@@ -1174,7 +1206,10 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
         
         case AST_CALL_EXPR: {
             char* name = node->data.call_expr.name;
-            
+
+            /* Inline builtins. Skipped wholesale for user/extern calls so a
+             * recursive function does not pay ~25 strcmp probes per call. */
+            if (is_builtin_name(name)) {
             /* Handle 'print' as built-in function */
             if (strcmp(name, "print") == 0 && node->data.call_expr.arg_count == 1) {
                 Value arg = interpreter_evaluate(interp, node->data.call_expr.args[0]);
@@ -1427,6 +1462,7 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                 value_free(&arr);
                 return result;
             }
+            } /* end inline builtins */
 
             /* Check for extern function */
             for (size_t i = 0; i < interp->extern_fn_count; i++) {
@@ -1558,20 +1594,19 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
             }
             
             /* Check for user-defined function */
-            for (size_t i = 0; i < interp->user_fn_count; i++) {
-                if (strcmp(interp->user_fns[i].name, name) == 0) {
-                    size_t arg_count = node->data.call_expr.arg_count;
-                    Value* args = (Value*)malloc(sizeof(Value) * arg_count);
-                    for (size_t j = 0; j < arg_count; j++) {
-                        args[j] = interpreter_evaluate(interp, node->data.call_expr.args[j]);
-                    }
-                    Value result = interpreter_call_user_fn(interp, &interp->user_fns[i], args, arg_count);
-                    for (size_t j = 0; j < arg_count; j++) {
-                        value_free(&args[j]);
-                    }
-                    free(args);
-                    return result;
+            UserFn* ufn = find_user_fn(interp, name);
+            if (ufn) {
+                size_t arg_count = node->data.call_expr.arg_count;
+                Value* args = (Value*)malloc(sizeof(Value) * arg_count);
+                for (size_t j = 0; j < arg_count; j++) {
+                    args[j] = interpreter_evaluate(interp, node->data.call_expr.args[j]);
                 }
+                Value result = interpreter_call_user_fn(interp, ufn, args, arg_count);
+                for (size_t j = 0; j < arg_count; j++) {
+                    value_free(&args[j]);
+                }
+                free(args);
+                return result;
             }
 
             /* Check for function value in scope */
@@ -1819,6 +1854,7 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                 if (interp->user_fn_count < MAX_USER_FNS) {
                     UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
                     ufn->name = strdup(method->data.fn_decl.name);
+                    ufn->name_hash = hn_name_hash(ufn->name);
                     ufn->node = method;
                 }
             }
@@ -1920,6 +1956,7 @@ void interpreter_execute_statement(Interpreter* interp, ASTNode* node) {
             if (interp->user_fn_count < MAX_USER_FNS) {
                 UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
                 ufn->name = strdup(node->data.fn_decl.name);
+                ufn->name_hash = hn_name_hash(ufn->name);
                 ufn->node = node;
             } else {
                 fprintf(stderr, "Error at line %d: ", node->line);
@@ -2240,12 +2277,10 @@ int interpreter_run(Interpreter* interp, ASTNode* program) {
         interpreter_execute_statement(interp, stmt);
     }
 
-    for (size_t i = 0; i < interp->user_fn_count; i++) {
-        if (strcmp(interp->user_fns[i].name, "main") == 0) {
-            Value main_result = interpreter_call_user_fn(interp, &interp->user_fns[i], NULL, 0);
-            value_free(&main_result);
-            break;
-        }
+    UserFn* main_fn = find_user_fn(interp, "main");
+    if (main_fn) {
+        Value main_result = interpreter_call_user_fn(interp, main_fn, NULL, 0);
+        value_free(&main_result);
     }
 
     return 0;
