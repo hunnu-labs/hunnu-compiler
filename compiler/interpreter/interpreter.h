@@ -5,9 +5,6 @@
 #include "value.h"
 #include "scope.h"
 
-#define MAX_EXTERN_FNS 64
-#define MAX_USER_FNS 256
-
 typedef struct {
     char* name;
     char* symbol_name;
@@ -39,13 +36,15 @@ typedef struct Interpreter {
     int has_break;
     int has_continue;
     int32_t current_line;
-    ExternFn extern_fns[MAX_EXTERN_FNS];
+    ExternFn* extern_fns;
     size_t extern_fn_count;
+    size_t extern_fn_capacity;
     TypeInfo* types;
     size_t type_count;
     size_t type_capacity;
-    UserFn user_fns[MAX_USER_FNS];
+    UserFn* user_fns;
     size_t user_fn_count;
+    size_t user_fn_capacity;
     /* Tail Call Optimization */
     char* current_fn_name;
     int tco_pending;

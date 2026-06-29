@@ -8,16 +8,17 @@
 #include "opcodes.h"
 #include <ctype.h>
 
-#define STACK_MAX 256
-#define MAX_LOCALS 256
-#define MAX_FRAMES 64
+#define STACK_INITIAL 32
+#define LOCALS_INITIAL 32
 
 typedef struct {
-    Value stack[STACK_MAX];
+    Value* stack;
     int stack_count;
+    int stack_capacity;
     
-    Value locals[MAX_LOCALS];
+    Value* locals;
     int local_count;
+    int local_capacity;
     
     CompiledProgram* program;
     size_t ip;
@@ -25,8 +26,9 @@ typedef struct {
 
 typedef struct {
     size_t ip;
-    Value locals[MAX_LOCALS];
+    Value* locals;
     int local_count;
+    int local_capacity;
     size_t return_ip;
 } CallFrame;
 
@@ -38,15 +40,24 @@ typedef struct {
 
 static void vm_init(VM* vm) {
     vm->stack_count = 0;
+    vm->stack_capacity = STACK_INITIAL;
+    vm->stack = xmalloc(sizeof(Value) * vm->stack_capacity);
     vm->local_count = 0;
+    vm->local_capacity = LOCALS_INITIAL;
+    vm->locals = xmalloc(sizeof(Value) * vm->local_capacity);
     vm->program = NULL;
     vm->ip = 0;
 }
 
+static void vm_free(VM* vm) {
+    free(vm->stack);
+    free(vm->locals);
+}
+
 static void vm_push(VM* vm, Value value) {
-    if (vm->stack_count >= STACK_MAX) {
-        fprintf(stderr, "Error: Stack overflow (max %d values)\n", STACK_MAX);
-        exit(1);
+    if (vm->stack_count >= vm->stack_capacity) {
+        vm->stack_capacity *= 2;
+        vm->stack = xrealloc(vm->stack, sizeof(Value) * vm->stack_capacity);
     }
     vm->stack[vm->stack_count++] = value;
 }
@@ -349,6 +360,10 @@ static int vm_run(VM* vm, CallFrame* frames, int* frame_count, Function* functio
                 if (idx >= (uint8_t)vm->local_count) {
                     vm->local_count = idx + 1;
                 }
+                if (idx >= (uint8_t)vm->local_capacity) {
+                    vm->local_capacity = idx + 16;
+                    vm->locals = xrealloc(vm->locals, sizeof(Value) * vm->local_capacity);
+                }
                 vm->locals[idx] = *v_ptr;
                 break;
             }
@@ -427,6 +442,8 @@ static int vm_run(VM* vm, CallFrame* frames, int* frame_count, Function* functio
                             // Save current state
                             frames[*frame_count].ip = vm->ip;
                             frames[*frame_count].local_count = vm->local_count;
+                            frames[*frame_count].local_capacity = vm->local_capacity;
+                            frames[*frame_count].locals = xmalloc(sizeof(Value) * vm->local_capacity);
                             for (int j = 0; j < vm->local_count; j++) {
                                 frames[*frame_count].locals[j] = vm->locals[j];
                             }
@@ -436,6 +453,10 @@ static int vm_run(VM* vm, CallFrame* frames, int* frame_count, Function* functio
                             // Set up new function call
                             vm->ip = functions[i].entry_point;
                             vm->local_count = 0;
+                            if (functions[i].arg_count > vm->local_capacity) {
+                                vm->local_capacity = functions[i].arg_count + 16;
+                                vm->locals = xrealloc(vm->locals, sizeof(Value) * vm->local_capacity);
+                            }
                             for (int j = 0; j < functions[i].arg_count; j++) {
                                 if (vm->stack_count > 0) {
                                     vm->locals[j] = vm_pop(vm);
@@ -460,9 +481,14 @@ static int vm_run(VM* vm, CallFrame* frames, int* frame_count, Function* functio
                 (*frame_count)--;
                 vm->ip = frames[*frame_count].return_ip;
                 vm->local_count = frames[*frame_count].local_count;
+                if (vm->local_capacity < frames[*frame_count].local_capacity) {
+                    vm->local_capacity = frames[*frame_count].local_capacity;
+                    vm->locals = xrealloc(vm->locals, sizeof(Value) * vm->local_capacity);
+                }
                 for (int j = 0; j < vm->local_count; j++) {
                     vm->locals[j] = frames[*frame_count].locals[j];
                 }
+                free(frames[*frame_count].locals);
                 break;
             }
             
@@ -482,10 +508,12 @@ int vm_execute(CompiledProgram* program) {
     vm_init(&vm);
     vm.program = program;
     
-    CallFrame frames[MAX_FRAMES];
+    int frame_capacity = 16;
+    CallFrame* frames = xmalloc(sizeof(CallFrame) * frame_capacity);
     int frame_count = 0;
     
-    Function functions[256];
+    int function_capacity = 64;
+    Function* functions = xmalloc(sizeof(Function) * function_capacity);
     int function_count = 0;
     
     // First pass: collect function definitions
@@ -501,6 +529,10 @@ int vm_execute(CompiledProgram* program) {
                 size_t entry = read_int64(bytecode, &ip);
                 uint8_t arg_count = bytecode[ip++];
                 if (program->constants[name_idx].type == VALUE_STRING) {
+                    if (function_count >= function_capacity) {
+                        function_capacity *= 2;
+                        functions = xrealloc(functions, sizeof(Function) * function_capacity);
+                    }
                     functions[function_count].name = program->constants[name_idx].value.string_value;
                     functions[function_count].entry_point = entry;
                     functions[function_count].arg_count = arg_count;
@@ -530,5 +562,9 @@ int vm_execute(CompiledProgram* program) {
         }
     }
     
-    return vm_run(&vm, frames, &frame_count, functions, function_count);
+    int result = vm_run(&vm, frames, &frame_count, functions, function_count);
+    free(frames);
+    free(functions);
+    vm_free(&vm);
+    return result;
 }
