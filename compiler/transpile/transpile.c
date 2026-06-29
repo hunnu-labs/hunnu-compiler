@@ -14,8 +14,9 @@ static struct {
     size_t* method_param_counts;
     size_t method_count;
     int has_constructor;
-} class_info[64];
+} *class_info;
 static size_t class_info_count = 0;
+static size_t class_info_capacity = 0;
 
 static char* reg_init = NULL;
 static size_t reg_init_cap = 0;
@@ -665,6 +666,9 @@ char* transpile_to_c(ASTNode* program) {
     reg_init_cap = 0;
     reg_init_len = 0;
     class_info_count = 0;
+    class_info_capacity = 0;
+    free(class_info);
+    class_info = NULL;
 
     write_runtime_header(out);
 
@@ -677,20 +681,22 @@ char* transpile_to_c(ASTNode* program) {
             } else if (stmt->type == AST_CLASS_DECL) {
                 type_registry_add(stmt->data.class_decl.name, stmt->data.class_decl.fields, stmt->data.class_decl.field_count);
                     (void)stmt->data.class_decl.is_pub;
-                if (class_info_count < 64) {
-                    class_info[class_info_count].name = stmt->data.class_decl.name;
-                    class_info[class_info_count].fields = stmt->data.class_decl.fields;
-                    class_info[class_info_count].field_count = stmt->data.class_decl.field_count;
-                    class_info[class_info_count].method_count = stmt->data.class_decl.method_count;
-                    class_info[class_info_count].has_constructor = (stmt->data.class_decl.constructor != NULL);
-                    class_info[class_info_count].method_names = malloc(sizeof(char*) * stmt->data.class_decl.method_count);
-                    class_info[class_info_count].method_param_counts = malloc(sizeof(size_t) * stmt->data.class_decl.method_count);
-                    for (size_t mi = 0; mi < stmt->data.class_decl.method_count; mi++) {
-                        class_info[class_info_count].method_names[mi] = stmt->data.class_decl.methods[mi]->data.fn_decl.name;
-                        class_info[class_info_count].method_param_counts[mi] = stmt->data.class_decl.methods[mi]->data.fn_decl.param_count;
-                    }
-                    class_info_count++;
+                if (class_info_count >= class_info_capacity) {
+                    class_info_capacity = class_info_capacity ? class_info_capacity * 2 : 16;
+                    class_info = xrealloc(class_info, sizeof(*class_info) * class_info_capacity);
                 }
+                class_info[class_info_count].name = stmt->data.class_decl.name;
+                class_info[class_info_count].fields = stmt->data.class_decl.fields;
+                class_info[class_info_count].field_count = stmt->data.class_decl.field_count;
+                class_info[class_info_count].method_count = stmt->data.class_decl.method_count;
+                class_info[class_info_count].has_constructor = (stmt->data.class_decl.constructor != NULL);
+                class_info[class_info_count].method_names = malloc(sizeof(char*) * stmt->data.class_decl.method_count);
+                class_info[class_info_count].method_param_counts = malloc(sizeof(size_t) * stmt->data.class_decl.method_count);
+                for (size_t mi = 0; mi < stmt->data.class_decl.method_count; mi++) {
+                    class_info[class_info_count].method_names[mi] = stmt->data.class_decl.methods[mi]->data.fn_decl.name;
+                    class_info[class_info_count].method_param_counts[mi] = stmt->data.class_decl.methods[mi]->data.fn_decl.param_count;
+                }
+                class_info_count++;
             } else if (stmt->type == AST_FN_DECL) {
                 /* Register standalone methods (fn Type.method) in the dispatch table */
                 char* fname = stmt->data.fn_decl.name;

@@ -72,17 +72,19 @@ Interpreter* interpreter_new(void) {
     interp->has_continue = 0;
     interp->current_line = 0;
     interp->extern_fn_count = 0;
+    interp->extern_fn_capacity = 8;
+    interp->extern_fns = xmalloc(sizeof(ExternFn) * interp->extern_fn_capacity);
     interp->type_count = 0;
     interp->type_capacity = 0;
     interp->types = NULL;
     interp->user_fn_count = 0;
+    interp->user_fn_capacity = 32;
+    interp->user_fns = xmalloc(sizeof(UserFn) * interp->user_fn_capacity);
     interp->current_fn_name = NULL;
     interp->tco_pending = 0;
     interp->tco_args = NULL;
     interp->tco_arg_count = 0;
     interp->last_expr_value = value_create_none();
-    memset(interp->extern_fns, 0, sizeof(interp->extern_fns));
-    memset(interp->user_fns, 0, sizeof(interp->user_fns));
     return interp;
 }
 
@@ -124,6 +126,7 @@ void interpreter_free(Interpreter* interp) {
             dlclose(interp->extern_fns[i].handle);
         }
     }
+    free(interp->extern_fns);
     for (size_t i = 0; i < interp->type_count; i++) {
         free(interp->types[i].name);
         if (interp->types[i].parent_name) free(interp->types[i].parent_name);
@@ -137,6 +140,7 @@ void interpreter_free(Interpreter* interp) {
     for (size_t i = 0; i < interp->user_fn_count; i++) {
         free(interp->user_fns[i].name);
     }
+    free(interp->user_fns);
     scope_free(interp->current_scope);
     free(interp);
 }
@@ -585,23 +589,27 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
             /* Register child's own constructor and methods FIRST so they take priority */
             if (node->data.class_decl.constructor) {
                 ASTNode* ctor = node->data.class_decl.constructor;
-                if (interp->user_fn_count < MAX_USER_FNS) {
-                    UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
-                    char* ctor_name = (char*)malloc(strlen(node->data.class_decl.name) + 5);
-                    sprintf(ctor_name, "%s.new", node->data.class_decl.name);
-                    ufn->name = ctor_name;
-                    ufn->name_hash = hn_name_hash(ctor_name);
-                    ufn->node = ctor;
+                if (interp->user_fn_count >= interp->user_fn_capacity) {
+                    interp->user_fn_capacity *= 2;
+                    interp->user_fns = xrealloc(interp->user_fns, sizeof(UserFn) * interp->user_fn_capacity);
                 }
+                UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
+                char* ctor_name = (char*)malloc(strlen(node->data.class_decl.name) + 5);
+                sprintf(ctor_name, "%s.new", node->data.class_decl.name);
+                ufn->name = ctor_name;
+                ufn->name_hash = hn_name_hash(ctor_name);
+                ufn->node = ctor;
             }
             for (size_t i = 0; i < node->data.class_decl.method_count; i++) {
                 ASTNode* method = node->data.class_decl.methods[i];
-                if (interp->user_fn_count < MAX_USER_FNS) {
-                    UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
-                    ufn->name = strdup(method->data.fn_decl.name);
-                    ufn->name_hash = hn_name_hash(ufn->name);
-                    ufn->node = method;
+                if (interp->user_fn_count >= interp->user_fn_capacity) {
+                    interp->user_fn_capacity *= 2;
+                    interp->user_fns = xrealloc(interp->user_fns, sizeof(UserFn) * interp->user_fn_capacity);
                 }
+                UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
+                ufn->name = strdup(method->data.fn_decl.name);
+                ufn->name_hash = hn_name_hash(ufn->name);
+                ufn->node = method;
             }
 
             /* Inherit parent methods that don't conflict with child's overrides */
@@ -617,7 +625,11 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                         sprintf(inherited_name, "%s%s", child_name, method_part);
                         /* Check if child already has this method (skip if overridden) */
                         int already_exists = find_user_fn(interp, inherited_name) != NULL;
-                        if (!already_exists && interp->user_fn_count < MAX_USER_FNS) {
+                        if (!already_exists) {
+                            if (interp->user_fn_count >= interp->user_fn_capacity) {
+                                interp->user_fn_capacity *= 2;
+                                interp->user_fns = xrealloc(interp->user_fns, sizeof(UserFn) * interp->user_fn_capacity);
+                            }
                             UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
                             ufn->name = inherited_name;
                             ufn->name_hash = hn_name_hash(inherited_name);
@@ -1759,12 +1771,14 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
             /* Register trait implementation methods under TypeName.methodName */
             for (size_t i = 0; i < node->data.impl_decl.method_count; i++) {
                 ASTNode* method = node->data.impl_decl.methods[i];
-                if (interp->user_fn_count < MAX_USER_FNS) {
-                    UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
-                    ufn->name = strdup(method->data.fn_decl.name);
-                    ufn->name_hash = hn_name_hash(ufn->name);
-                    ufn->node = method;
+                if (interp->user_fn_count >= interp->user_fn_capacity) {
+                    interp->user_fn_capacity *= 2;
+                    interp->user_fns = xrealloc(interp->user_fns, sizeof(UserFn) * interp->user_fn_capacity);
                 }
+                UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
+                ufn->name = strdup(method->data.fn_decl.name);
+                ufn->name_hash = hn_name_hash(ufn->name);
+                ufn->node = method;
             }
             return value_create_none();
         }
@@ -1861,15 +1875,14 @@ void interpreter_execute_statement(Interpreter* interp, ASTNode* node) {
         
         case AST_FN_DECL: {
             /* Register as a user-defined function instead of executing body */
-            if (interp->user_fn_count < MAX_USER_FNS) {
-                UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
-                ufn->name = strdup(node->data.fn_decl.name);
-                ufn->name_hash = hn_name_hash(ufn->name);
-                ufn->node = node;
-            } else {
-                fprintf(stderr, "Error at line %d: ", node->line);
-                fprintf(stderr, "Too many user-defined functions\n");
+            if (interp->user_fn_count >= interp->user_fn_capacity) {
+                interp->user_fn_capacity *= 2;
+                interp->user_fns = xrealloc(interp->user_fns, sizeof(UserFn) * interp->user_fn_capacity);
             }
+            UserFn* ufn = &interp->user_fns[interp->user_fn_count++];
+            ufn->name = strdup(node->data.fn_decl.name);
+            ufn->name_hash = hn_name_hash(ufn->name);
+            ufn->node = node;
             /* Also store in scope as VALUE_FUNCTION for first-class function support */
             Value fn_val = value_create_function(node, NULL);
             scope_define(interp->current_scope, node->data.fn_decl.name, fn_val, 0);
@@ -1878,11 +1891,9 @@ void interpreter_execute_statement(Interpreter* interp, ASTNode* node) {
         }
         
         case AST_EXTERN_FN: {
-            if (interp->extern_fn_count >= MAX_EXTERN_FNS) {
-                fprintf(stderr, "Error at line %d: ", node->line);
-                i18n_error(ERR_TOO_MANY_EXTERN_DECLS);
-                fprintf(stderr, "\n");
-                break;
+            if (interp->extern_fn_count >= interp->extern_fn_capacity) {
+                interp->extern_fn_capacity *= 2;
+                interp->extern_fns = xrealloc(interp->extern_fns, sizeof(ExternFn) * interp->extern_fn_capacity);
             }
             
             /* Load library first to avoid leaking name/symbol_name on error */
