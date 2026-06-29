@@ -370,7 +370,7 @@ ASTNode* ast_binary_expr_create(TokenType operator, ASTNode* left, ASTNode* righ
 ASTNode* ast_unary_expr_create(TokenType operator, ASTNode* operand, int32_t line, int32_t column);
 ASTNode* ast_literal_create_int(int64_t value, int32_t line, int32_t column);
 ASTNode* ast_literal_create_float(double value, int32_t line, int32_t column);
-ASTNode* ast_literal_create_string(char* value, int32_t line, int32_t column);
+ASTNode* ast_literal_create_string(const char* value, int32_t line, int32_t column);
 ASTNode* ast_literal_create_bool(int value, int32_t line, int32_t column);
 ASTNode* ast_identifier_create(const char* name, int32_t line, int32_t column);
 ASTNode* ast_call_expr_create(const char* name, ASTNode** args, size_t arg_count, int32_t line, int32_t column);

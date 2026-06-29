@@ -1,7 +1,7 @@
 #ifndef HUNNU_BUILTINS_H
 #define HUNNU_BUILTINS_H
 
-#include "compiler/value.h"
+#include "runtime/value.h"
 
 Value builtin_str_to_upper(const char* s);
 Value builtin_str_to_lower(const char* s);
@@ -9,9 +9,13 @@ int builtin_str_contains(const char* s, const char* sub);
 Value builtin_str_trim(const char* s);
 Value builtin_str_split(const char* s, const char* delim);
 Value builtin_str_join(Value arr, const char* delim);
+int builtin_fs_exists(const char* path);
 Value builtin_fs_read_file(const char* path);
 int builtin_fs_write_file(const char* path, const char* content);
+Value builtin_time_format(int64_t epoch);
 Value builtin_arr_push(Value arr, Value val);
 Value builtin_arr_pop(Value arr);
+
+Value builtin_dispatch(const char* name, Value* args, int arg_count);
 
 #endif

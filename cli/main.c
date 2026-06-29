@@ -4,9 +4,9 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include "cli.h"
-#include "compiler/import.h"
+#include "compiler/runtime/import.h"
 #include "compiler/lexer/lexer.h"
-#include "compiler/version.h"
+#include "compiler/runtime/version.h"
 #include "compiler/parser/parser.h"
 #include "compiler/interpreter/interpreter.h"
 #include "compiler/vm/compiler.h"

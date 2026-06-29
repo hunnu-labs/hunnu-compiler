@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <time.h>
 
 Value builtin_str_to_upper(const char* s) {
     size_t len = strlen(s);
@@ -135,10 +136,17 @@ Value builtin_str_join(Value arr, const char* delim) {
     return v;
 }
 
+int builtin_fs_exists(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
 Value builtin_fs_read_file(const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) {
-        return value_create_string("");
+        return value_create_option(1, NULL);
     }
 
     fseek(f, 0, SEEK_END);
@@ -193,7 +201,84 @@ Value builtin_arr_push(Value arr, Value val) {
 
 Value builtin_arr_pop(Value arr) {
     if (arr.array_length == 0) {
-        return value_create_none();
+        return value_create_option(1, NULL);
     }
     return value_copy(arr.array_elements[arr.array_length - 1]);
+}
+
+Value builtin_time_format(int64_t epoch) {
+    time_t t = (time_t)epoch;
+    struct tm* tm_info = localtime(&t);
+    if (!tm_info) {
+        return value_create_string("Invalid time");
+    }
+    char buf[64];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm_info);
+    return value_create_string(buf);
+}
+
+Value builtin_dispatch(const char* name, Value* args, int arg_count) {
+    if (strcmp(name, "__hn_str_to_upper") == 0 && arg_count == 1) {
+        if (args[0].type != VALUE_STRING) return value_create_string("");
+        return builtin_str_to_upper(args[0].value.string_value);
+    }
+    if (strcmp(name, "__hn_str_to_lower") == 0 && arg_count == 1) {
+        if (args[0].type != VALUE_STRING) return value_create_string("");
+        return builtin_str_to_lower(args[0].value.string_value);
+    }
+    if (strcmp(name, "__hn_str_contains") == 0 && arg_count == 2) {
+        int found = 0;
+        if (args[0].type == VALUE_STRING && args[1].type == VALUE_STRING) {
+            found = builtin_str_contains(args[0].value.string_value, args[1].value.string_value);
+        }
+        return value_create_bool(found);
+    }
+    if (strcmp(name, "__hn_str_trim") == 0 && arg_count == 1) {
+        if (args[0].type != VALUE_STRING) return value_create_string("");
+        return builtin_str_trim(args[0].value.string_value);
+    }
+    if (strcmp(name, "__hn_str_split") == 0 && arg_count == 2) {
+        if (args[0].type == VALUE_STRING && args[1].type == VALUE_STRING) {
+            return builtin_str_split(args[0].value.string_value, args[1].value.string_value);
+        }
+        return value_create_none();
+    }
+    if (strcmp(name, "__hn_str_join") == 0 && arg_count == 2) {
+        if (args[0].type == VALUE_ARRAY && args[1].type == VALUE_STRING) {
+            return builtin_str_join(args[0], args[1].value.string_value);
+        }
+        return value_create_string("");
+    }
+    if (strcmp(name, "__hn_time_format") == 0 && arg_count == 1) {
+        return builtin_time_format(args[0].value.int_value);
+    }
+    if (strcmp(name, "__hn_fs_exists") == 0 && arg_count == 1) {
+        int exists = 0;
+        if (args[0].type == VALUE_STRING) {
+            exists = builtin_fs_exists(args[0].value.string_value);
+        }
+        return value_create_bool(exists);
+    }
+    if (strcmp(name, "__hn_fs_read_file") == 0 && arg_count == 1) {
+        if (args[0].type != VALUE_STRING) return value_create_string("");
+        return builtin_fs_read_file(args[0].value.string_value);
+    }
+    if (strcmp(name, "__hn_fs_write_file") == 0 && arg_count == 2) {
+        int ok = 0;
+        if (args[0].type == VALUE_STRING && args[1].type == VALUE_STRING) {
+            ok = builtin_fs_write_file(args[0].value.string_value, args[1].value.string_value);
+        }
+        return value_create_bool(ok);
+    }
+    if (strcmp(name, "__hn_arr_push") == 0 && arg_count == 2) {
+        if (args[0].type == VALUE_ARRAY) {
+            return builtin_arr_push(args[0], args[1]);
+        }
+        return args[0];
+    }
+    if (strcmp(name, "__hn_arr_pop") == 0 && arg_count == 1) {
+        if (args[0].type != VALUE_ARRAY) return value_create_none();
+        return builtin_arr_pop(args[0]);
+    }
+    return value_create_none();
 }

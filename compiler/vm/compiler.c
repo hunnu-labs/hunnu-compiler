@@ -1,5 +1,5 @@
 #include "compiler.h"
-#include "../value.h"
+#include "../runtime/value.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -99,7 +99,8 @@ static void compiler_compile_expression(Compiler* c, ASTNode* node) {
                 compiler_emit_int(c, node->data.literal.value.int_value);
             } else if (node->data.literal.literal_type == TOKEN_FLOAT_LITERAL) {
                 compiler_emit_byte(c, OP_CONSTANT_FLOAT);
-                int64_t bits = *(int64_t*)&node->data.literal.value.float_value;
+                int64_t bits;
+                memcpy(&bits, &node->data.literal.value.float_value, sizeof(bits));
                 compiler_emit_int(c, bits);
             } else if (node->data.literal.literal_type == TOKEN_STRING_LITERAL) {
                 Value v = value_create_string(node->data.literal.value.string_value);

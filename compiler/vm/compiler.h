@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "opcodes.h"
-#include "../value.h"
+#include "../runtime/value.h"
 #include "../ast/ast.h"
 
 /** Bytecode chunk */

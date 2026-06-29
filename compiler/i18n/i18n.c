@@ -59,12 +59,6 @@ static const char* error_messages_mn[] = {
     [ERR_MAX] = NULL
 };
 
-static const char* value_strings_en[] = {
-    "true",
-    "false",
-    "nil"
-};
-
 static const char* value_strings_mn[] = {
     "үнэн",
     "худал",

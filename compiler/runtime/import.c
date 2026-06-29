@@ -111,7 +111,8 @@ static char* read_raw_file(const char* filename, long* out_size) {
     fseek(fp, 0, SEEK_SET);
 
     char* source = (char*)malloc(file_size + 1);
-    fread(source, 1, file_size, fp);
+    size_t bytes_read = fread(source, 1, file_size, fp);
+    (void)bytes_read;
     source[file_size] = '\0';
     fclose(fp);
 

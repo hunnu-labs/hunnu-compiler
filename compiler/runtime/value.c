@@ -383,6 +383,7 @@ Value value_create_option(int is_none, Value* inner) {
 }
 
 Value value_create_result(int is_ok, Value* ok_val, Value* err_val) {
+    (void)is_ok;
     Value v;
     memset(&v, 0, sizeof(v));
     v.type = VALUE_RESULT;

@@ -1,5 +1,5 @@
-#include "../compiler/scope.h"
-#include "../compiler/value.h"
+#include "../compiler/runtime/scope.h"
+#include "../compiler/runtime/value.h"
 #include "minunit.h"
 
 static int test_scope_define_lookup(void) {

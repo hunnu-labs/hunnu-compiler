@@ -1,4 +1,4 @@
-#include "../compiler/value.h"
+#include "../compiler/runtime/value.h"
 #include "minunit.h"
 
 static int test_value_create_int(void) {

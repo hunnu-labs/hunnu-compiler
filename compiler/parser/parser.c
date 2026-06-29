@@ -923,34 +923,6 @@ ASTNode* parser_parse_block(Parser* parser) {
                        parser->previous ? parser->previous->column : 0);
 }
 
-static ASTNode* parser_read_block_until_end(Parser* parser) {
-    /* Collect statements until TOKEN_END or EOF */
-    ASTNode** stmts = NULL;
-    size_t count = 0;
-    size_t capacity = 0;
-    
-    while (!parser_check(parser, TOKEN_END) && !parser_check(parser, TOKEN_RBRACE) && !parser_check(parser, TOKEN_EOF)) {
-        ASTNode* stmt = parser_parse_declaration(parser);
-        if (stmt) {
-            if (count >= capacity) {
-                capacity = capacity == 0 ? 8 : capacity * 2;
-                stmts = (ASTNode**)realloc(stmts, sizeof(ASTNode*) * capacity);
-            }
-            stmts[count++] = stmt;
-        }
-        if (parser->had_error) break;
-    }
-    
-    if (count == 0) {
-        free(stmts);
-        return NULL;
-    }
-    
-    return ast_block_create(stmts, count,
-                           parser->previous ? parser->previous->line : 0,
-                           parser->previous ? parser->previous->column : 0);
-}
-
 ASTNode* parser_parse_if_statement(Parser* parser) {
     ASTNode* condition = parser_parse_expression(parser);
     
@@ -2183,6 +2155,7 @@ static ASTNode* parser_parse_match_expression(Parser* parser) {
  */
 static ASTNode* parser_parse_interpolated_string(Parser* parser, const char* str_val,
                                                  int32_t line, int32_t column) {
+    (void)parser;
     ASTNode* result = NULL;
     const char* p = str_val;
     int32_t current_line = line;

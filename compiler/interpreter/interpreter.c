@@ -4,10 +4,10 @@
  */
 
 #include "interpreter.h"
-#include "compiler/value.h"
-#include "compiler/scope.h"
-#include "compiler/ast/ast.h"
-#include "compiler/i18n/i18n.h"
+#include "../runtime/value.h"
+#include "../runtime/scope.h"
+#include "../ast/ast.h"
+#include "../i18n/i18n.h"
 #include "builtins.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,9 +23,10 @@
 static const char* const BUILTIN_NAMES[] = {
     "Err", "None", "Ok", "Some",
     "__hn_arr_pop", "__hn_arr_push",
-    "__hn_fs_read_file", "__hn_fs_write_file",
+    "__hn_fs_exists", "__hn_fs_read_file", "__hn_fs_write_file",
     "__hn_str_contains", "__hn_str_join", "__hn_str_split",
     "__hn_str_to_lower", "__hn_str_to_upper", "__hn_str_trim",
+    "__hn_time_format",
     "error", "input",
     "is_err", "is_none", "is_ok", "is_some",
     "len", "print", "to_float", "to_int", "to_str",
@@ -1358,108 +1359,21 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                 return value_create_bool(is_err);
             }
 
-            /* Builtin string operations */
-            if (strcmp(name, "__hn_str_to_upper") == 0 && node->data.call_expr.arg_count == 1) {
-                Value arg = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                if (arg.type != VALUE_STRING) { value_free(&arg); return value_create_string(""); }
-                Value result = builtin_str_to_upper(arg.value.string_value);
-                value_free(&arg);
-                return result;
-            }
-
-            if (strcmp(name, "__hn_str_to_lower") == 0 && node->data.call_expr.arg_count == 1) {
-                Value arg = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                if (arg.type != VALUE_STRING) { value_free(&arg); return value_create_string(""); }
-                Value result = builtin_str_to_lower(arg.value.string_value);
-                value_free(&arg);
-                return result;
-            }
-
-            if (strcmp(name, "__hn_str_contains") == 0 && node->data.call_expr.arg_count == 2) {
-                Value s = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                Value sub = interpreter_evaluate(interp, node->data.call_expr.args[1]);
-                int found = 0;
-                if (s.type == VALUE_STRING && sub.type == VALUE_STRING) {
-                    found = builtin_str_contains(s.value.string_value, sub.value.string_value);
+            /* Consolidated builtin dispatch (__hn_* functions) */
+            {
+                size_t ac = node->data.call_expr.arg_count;
+                Value* builtin_args = NULL;
+                if (ac > 0) {
+                    builtin_args = xmalloc(sizeof(Value) * ac);
+                    for (size_t bi = 0; bi < ac; bi++) {
+                        builtin_args[bi] = interpreter_evaluate(interp, node->data.call_expr.args[bi]);
+                    }
                 }
-                value_free(&s);
-                value_free(&sub);
-                return value_create_bool(found);
-            }
-
-            if (strcmp(name, "__hn_str_trim") == 0 && node->data.call_expr.arg_count == 1) {
-                Value arg = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                if (arg.type != VALUE_STRING) { value_free(&arg); return value_create_string(""); }
-                Value result = builtin_str_trim(arg.value.string_value);
-                value_free(&arg);
-                return result;
-            }
-
-            if (strcmp(name, "__hn_str_split") == 0 && node->data.call_expr.arg_count == 2) {
-                Value s = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                Value delim = interpreter_evaluate(interp, node->data.call_expr.args[1]);
-                Value result = value_create_none();
-                if (s.type == VALUE_STRING && delim.type == VALUE_STRING) {
-                    result = builtin_str_split(s.value.string_value, delim.value.string_value);
+                Value result = builtin_dispatch(name, builtin_args, (int)ac);
+                for (size_t bi = 0; bi < ac; bi++) {
+                    value_free(&builtin_args[bi]);
                 }
-                value_free(&s);
-                value_free(&delim);
-                return result;
-            }
-
-            if (strcmp(name, "__hn_str_join") == 0 && node->data.call_expr.arg_count == 2) {
-                Value arr = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                Value delim = interpreter_evaluate(interp, node->data.call_expr.args[1]);
-                Value result = value_create_string("");
-                if (arr.type == VALUE_ARRAY && delim.type == VALUE_STRING) {
-                    result = builtin_str_join(arr, delim.value.string_value);
-                }
-                value_free(&arr);
-                value_free(&delim);
-                return result;
-            }
-
-            /* Builtin filesystem operations */
-            if (strcmp(name, "__hn_fs_read_file") == 0 && node->data.call_expr.arg_count == 1) {
-                Value arg = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                if (arg.type != VALUE_STRING) { value_free(&arg); return value_create_string(""); }
-                Value result = builtin_fs_read_file(arg.value.string_value);
-                value_free(&arg);
-                return result;
-            }
-
-            if (strcmp(name, "__hn_fs_write_file") == 0 && node->data.call_expr.arg_count == 2) {
-                Value path = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                Value content = interpreter_evaluate(interp, node->data.call_expr.args[1]);
-                int ok = 0;
-                if (path.type == VALUE_STRING && content.type == VALUE_STRING) {
-                    ok = builtin_fs_write_file(path.value.string_value, content.value.string_value);
-                }
-                value_free(&path);
-                value_free(&content);
-                return value_create_bool(ok);
-            }
-
-            /* Builtin array operations */
-            if (strcmp(name, "__hn_arr_push") == 0 && node->data.call_expr.arg_count == 2) {
-                Value arr = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                Value val = interpreter_evaluate(interp, node->data.call_expr.args[1]);
-                Value result = arr;
-                if (arr.type == VALUE_ARRAY) {
-                    result = builtin_arr_push(arr, val);
-                }
-                value_free(&val);
-                return result;
-            }
-
-            if (strcmp(name, "__hn_arr_pop") == 0 && node->data.call_expr.arg_count == 1) {
-                Value arr = interpreter_evaluate(interp, node->data.call_expr.args[0]);
-                if (arr.type != VALUE_ARRAY) {
-                    value_free(&arr);
-                    return value_create_none();
-                }
-                Value result = builtin_arr_pop(arr);
-                value_free(&arr);
+                free(builtin_args);
                 return result;
             }
             } /* end inline builtins */
@@ -1501,25 +1415,23 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                         /* Call the function based on return type and argument types */
                         if (ef->returns_int == 2) {
                             /* String return type */
-                            typedef char* (*str_fn_var)(...);
-                            str_fn_var str_func = (str_fn_var)ef->func_ptr;
                             char* str_result = NULL;
                             
                             if (has_float) {
                                 switch (arg_count) {
-                                    case 0: str_result = ((char*(*)(void))str_func)(); break;
-                                    case 1: str_result = ((char*(*)(double))str_func)(args[0].d); break;
-                                    case 2: str_result = ((char*(*)(double,double))str_func)(args[0].d, args[1].d); break;
-                                    case 3: str_result = ((char*(*)(double,double,double))str_func)(args[0].d, args[1].d, args[2].d); break;
-                                    case 4: str_result = ((char*(*)(double,double,double,double))str_func)(args[0].d, args[1].d, args[2].d, args[3].d); break;
+                                    case 0: str_result = ((char*(*)(void))ef->func_ptr)(); break;
+                                    case 1: str_result = ((char*(*)(double))ef->func_ptr)(args[0].d); break;
+                                    case 2: str_result = ((char*(*)(double,double))ef->func_ptr)(args[0].d, args[1].d); break;
+                                    case 3: str_result = ((char*(*)(double,double,double))ef->func_ptr)(args[0].d, args[1].d, args[2].d); break;
+                                    case 4: str_result = ((char*(*)(double,double,double,double))ef->func_ptr)(args[0].d, args[1].d, args[2].d, args[3].d); break;
                                 }
                             } else {
                                 switch (arg_count) {
-                                    case 0: str_result = ((char*(*)(void))str_func)(); break;
-                                    case 1: str_result = ((char*(*)(int64_t))str_func)(args[0].i); break;
-                                    case 2: str_result = ((char*(*)(int64_t,int64_t))str_func)(args[0].i, args[1].i); break;
-                                    case 3: str_result = ((char*(*)(int64_t,int64_t,int64_t))str_func)(args[0].i, args[1].i, args[2].i); break;
-                                    case 4: str_result = ((char*(*)(int64_t,int64_t,int64_t,int64_t))str_func)(args[0].i, args[1].i, args[2].i, args[3].i); break;
+                                    case 0: str_result = ((char*(*)(void))ef->func_ptr)(); break;
+                                    case 1: str_result = ((char*(*)(int64_t))ef->func_ptr)(args[0].i); break;
+                                    case 2: str_result = ((char*(*)(int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i); break;
+                                    case 3: str_result = ((char*(*)(int64_t,int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i, args[2].i); break;
+                                    case 4: str_result = ((char*(*)(int64_t,int64_t,int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i, args[2].i, args[3].i); break;
                                 }
                             }
                             
@@ -1531,25 +1443,23 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                             return value_create_none();
                         } else if (ef->returns_int == 3) {
                             /* Float return type */
-                            typedef double (*fn_var)(...);
-                            fn_var func = (fn_var)ef->func_ptr;
                             double result = 0.0;
                             
                             if (has_float) {
                                 switch (arg_count) {
-                                    case 0: result = ((double(*)(void))func)(); break;
-                                    case 1: result = ((double(*)(double))func)(args[0].d); break;
-                                    case 2: result = ((double(*)(double,double))func)(args[0].d, args[1].d); break;
-                                    case 3: result = ((double(*)(double,double,double))func)(args[0].d, args[1].d, args[2].d); break;
-                                    case 4: result = ((double(*)(double,double,double,double))func)(args[0].d, args[1].d, args[2].d, args[3].d); break;
+                                    case 0: result = ((double(*)(void))ef->func_ptr)(); break;
+                                    case 1: result = ((double(*)(double))ef->func_ptr)(args[0].d); break;
+                                    case 2: result = ((double(*)(double,double))ef->func_ptr)(args[0].d, args[1].d); break;
+                                    case 3: result = ((double(*)(double,double,double))ef->func_ptr)(args[0].d, args[1].d, args[2].d); break;
+                                    case 4: result = ((double(*)(double,double,double,double))ef->func_ptr)(args[0].d, args[1].d, args[2].d, args[3].d); break;
                                 }
                             } else {
                                 switch (arg_count) {
-                                    case 0: result = ((double(*)(void))func)(); break;
-                                    case 1: result = ((double(*)(int64_t))func)(args[0].i); break;
-                                    case 2: result = ((double(*)(int64_t,int64_t))func)(args[0].i, args[1].i); break;
-                                    case 3: result = ((double(*)(int64_t,int64_t,int64_t))func)(args[0].i, args[1].i, args[2].i); break;
-                                    case 4: result = ((double(*)(int64_t,int64_t,int64_t,int64_t))func)(args[0].i, args[1].i, args[2].i, args[3].i); break;
+                                    case 0: result = ((double(*)(void))ef->func_ptr)(); break;
+                                    case 1: result = ((double(*)(int64_t))ef->func_ptr)(args[0].i); break;
+                                    case 2: result = ((double(*)(int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i); break;
+                                    case 3: result = ((double(*)(int64_t,int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i, args[2].i); break;
+                                    case 4: result = ((double(*)(int64_t,int64_t,int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i, args[2].i, args[3].i); break;
                                 }
                             }
                             
@@ -1558,25 +1468,23 @@ Value interpreter_evaluate(Interpreter* interp, ASTNode* node) {
                             return value_create_float(result);
                         } else {
                             /* Int/void return type */
-                            typedef int64_t (*fn_var)(...);
-                            fn_var func = (fn_var)ef->func_ptr;
                             int64_t result = 0;
                             
                             if (has_float) {
                                 switch (arg_count) {
-                                    case 0: result = ((int64_t(*)(void))func)(); break;
-                                    case 1: result = ((int64_t(*)(double))func)(args[0].d); break;
-                                    case 2: result = ((int64_t(*)(double,double))func)(args[0].d, args[1].d); break;
-                                    case 3: result = ((int64_t(*)(double,double,double))func)(args[0].d, args[1].d, args[2].d); break;
-                                    case 4: result = ((int64_t(*)(double,double,double,double))func)(args[0].d, args[1].d, args[2].d, args[3].d); break;
+                                    case 0: result = ((int64_t(*)(void))ef->func_ptr)(); break;
+                                    case 1: result = ((int64_t(*)(double))ef->func_ptr)(args[0].d); break;
+                                    case 2: result = ((int64_t(*)(double,double))ef->func_ptr)(args[0].d, args[1].d); break;
+                                    case 3: result = ((int64_t(*)(double,double,double))ef->func_ptr)(args[0].d, args[1].d, args[2].d); break;
+                                    case 4: result = ((int64_t(*)(double,double,double,double))ef->func_ptr)(args[0].d, args[1].d, args[2].d, args[3].d); break;
                                 }
                             } else {
                                 switch (arg_count) {
-                                    case 0: result = ((int64_t(*)(void))func)(); break;
-                                    case 1: result = ((int64_t(*)(int64_t))func)(args[0].i); break;
-                                    case 2: result = ((int64_t(*)(int64_t,int64_t))func)(args[0].i, args[1].i); break;
-                                    case 3: result = ((int64_t(*)(int64_t,int64_t,int64_t))func)(args[0].i, args[1].i, args[2].i); break;
-                                    case 4: result = ((int64_t(*)(int64_t,int64_t,int64_t,int64_t))func)(args[0].i, args[1].i, args[2].i, args[3].i); break;
+                                    case 0: result = ((int64_t(*)(void))ef->func_ptr)(); break;
+                                    case 1: result = ((int64_t(*)(int64_t))ef->func_ptr)(args[0].i); break;
+                                    case 2: result = ((int64_t(*)(int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i); break;
+                                    case 3: result = ((int64_t(*)(int64_t,int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i, args[2].i); break;
+                                    case 4: result = ((int64_t(*)(int64_t,int64_t,int64_t,int64_t))ef->func_ptr)(args[0].i, args[1].i, args[2].i, args[3].i); break;
                                 }
                             }
                             
@@ -2007,7 +1915,7 @@ void interpreter_execute_statement(Interpreter* interp, ASTNode* node) {
             ef->returns_int = node->data.extern_fn.returns_int;
             ef->param_count = (int)node->data.extern_fn.param_count;
             ef->handle = handle;
-            ef->func_ptr = func_ptr;
+            ef->func_ptr = (void (*)(void))(uintptr_t)func_ptr;
             
             interp->extern_fn_count++;
             break;

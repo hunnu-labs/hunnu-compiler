@@ -3,6 +3,25 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+static inline void* xmalloc(size_t size) {
+    void* p = malloc(size);
+    if (!p && size) { fprintf(stderr, "Fatal: out of memory\n"); exit(1); }
+    return p;
+}
+static inline void* xrealloc(void* ptr, size_t size) {
+    void* p = realloc(ptr, size);
+    if (!p && size) { fprintf(stderr, "Fatal: out of memory\n"); exit(1); }
+    return p;
+}
+static inline char* xstrdup(const char* s) {
+    char* p = strdup(s);
+    if (!p) { fprintf(stderr, "Fatal: out of memory\n"); exit(1); }
+    return p;
+}
 
 struct ASTNode;
 struct Scope;

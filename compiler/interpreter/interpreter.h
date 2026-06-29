@@ -12,7 +12,7 @@ typedef struct {
     char* name;
     char* symbol_name;
     void* handle;
-    void* func_ptr;
+    void (*func_ptr)(void);
     int returns_int;
     int param_count;
 } ExternFn;

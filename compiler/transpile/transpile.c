@@ -1,4 +1,5 @@
 #include "transpile.h"
+#include "../runtime/value.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -24,7 +25,7 @@ static void reg_init_append(const char* s) {
     size_t len = strlen(s);
     if (reg_init_len + len + 1 > reg_init_cap) {
         reg_init_cap = reg_init_cap ? reg_init_cap * 2 : 4096;
-        reg_init = realloc(reg_init, reg_init_cap);
+        reg_init = xrealloc(reg_init, reg_init_cap);
     }
     memcpy(reg_init + reg_init_len, s, len);
     reg_init_len += len;

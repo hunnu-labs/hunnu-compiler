@@ -11,15 +11,12 @@ add_executable(hunnu_tests
     test_scope.c
     test_interpreter.c
     ${HUNNU_ROOT}/compiler/lexer/lexer.c
-    ${HUNNU_ROOT}/compiler/lexer/token.c
     ${HUNNU_ROOT}/compiler/parser/parser.c
     ${HUNNU_ROOT}/compiler/ast/ast.c
-    ${HUNNU_ROOT}/compiler/ast/ast_free.c
-    ${HUNNU_ROOT}/compiler/ast/ast_print.c
     ${HUNNU_ROOT}/compiler/interpreter/interpreter.c
     ${HUNNU_ROOT}/compiler/interpreter/builtins.c
-    ${HUNNU_ROOT}/compiler/value.c
-    ${HUNNU_ROOT}/compiler/scope.c
+    ${HUNNU_ROOT}/compiler/runtime/value.c
+    ${HUNNU_ROOT}/compiler/runtime/scope.c
     ${HUNNU_ROOT}/compiler/i18n/i18n.c
 )
 
